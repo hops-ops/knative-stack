@@ -1,0 +1,53 @@
+# code: language=yaml
+#
+# Local Gateway resource for Knative cluster-local routes.
+#
+# net-gateway-api routes cluster-local Knative services (svc.cluster.local
+# hostnames) through a separate Gateway from the public-facing one. This
+# Gateway lives in the knative-serving namespace and uses the same
+# gatewayClassName (default: istio) so Istio's ambient Gateway controller
+# materializes a Service for it.
+#
+
+{{- $k8sPCR := $state.kubernetesProviderConfigRef }}
+{{- $knServing := $state.knativeServing }}
+{{- $obs := $state.observed }}
+{{- $servingNsReady := $obs.namespaceKnativeServing.ready }}
+{{- $gwClass := $state.gatewayRef.gatewayClassName }}
+
+# Gated on serving namespace readiness so the Gateway has somewhere to live.
+{{- if and $knServing.enabled $servingNsReady }}
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-knative-local-gateway
+  annotations:
+    {{ setResourceNameAnnotation "knative-local-gateway" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    manifest:
+      apiVersion: gateway.networking.k8s.io/v1
+      kind: Gateway
+      metadata:
+        name: knative-local-gateway
+        namespace: {{ $knServing.namespace }}
+        labels: {{ $state.labels | toJson }}
+      spec:
+        gatewayClassName: {{ $gwClass }}
+        listeners:
+        - name: http
+          # Wildcard hostname covers cluster-local Knative routes
+          # (e.g. <svc>.<ns>.svc.cluster.local).
+          hostname: "*.svc.cluster.local"
+          port: 80
+          protocol: HTTP
+          allowedRoutes:
+            namespaces:
+              from: All
+  providerConfigRef:
+    name: {{ $k8sPCR.name }}
+    kind: {{ $k8sPCR.kind }}
+{{- end }}

@@ -23,6 +23,20 @@
 {{- end }}
 {{- $issuerRef := $certManager.issuerRef | default "name: letsencrypt-production\nkind: ClusterIssuer" }}
 
+# Gateway API parent gateway (provisioned by istio-stack or equivalent)
+{{- $gwRef := $spec.gatewayRef | default dict }}
+{{- $gwRefName := $gwRef.name | default "platform" }}
+{{- $gwRefNamespace := $gwRef.namespace | default "istio-ingress" }}
+{{- $gwRefClass := $gwRef.gatewayClassName | default "istio" }}
+
+# Auto-TLS (per-namespace wildcard mode)
+{{- $autoTls := $spec.autoTls | default dict }}
+{{- $autoTlsEnabled := false }}
+{{- if hasKey $autoTls "enabled" }}
+  {{- $autoTlsEnabled = $autoTls.enabled }}
+{{- end }}
+{{- $autoTlsSelector := $autoTls.namespaceSelector | default (dict "matchLabels" (dict "knative.dev/auto-tls" "true")) }}
+
 # Labels
 {{- $defaultLabels := dict
   "hops.ops.com.ai/managed" "true"
@@ -67,8 +81,34 @@
 {{- end }}
 
 # ==============================================================================
-# Knative Serving default spec
+# Knative Serving default spec — net-gateway-api ingress
 # ==============================================================================
+# config-gateway settings consumed by net-gateway-api. Knative attaches every
+# emitted HTTPRoute as a parentRef to the named Gateway. external-gateways
+# handles public traffic, local-gateways handles cluster-local routes.
+#
+# The format is `gateway: <namespace>/<name>` and `service: <namespace>/<svc>`
+# (single strings). Istio auto-creates the Service when the Gateway is
+# materialized — for a Gateway named "platform" with class "istio", the Service
+# is "platform-istio" in the same namespace.
+{{- $extGwService := printf "%s/%s-%s" $gwRefNamespace $gwRefName $gwRefClass }}
+{{- $extGwRef := printf "%s/%s" $gwRefNamespace $gwRefName }}
+{{- $externalGatewaysYaml := printf "- class: %s\n  gateway: %s\n  service: %s\n  supported-features:\n  - HTTPRouteRequestTimeout" $gwRefClass $extGwRef $extGwService }}
+# Local Gateway: composed by this stack in the knative-serving namespace as
+# "knative-local-gateway" with the same gatewayClassName. Used by Knative for
+# cluster-local routes (svc.cluster.local hostnames).
+{{- $localGwRef := printf "%s/knative-local-gateway" ($knServing.namespace | default "knative-serving") }}
+{{- $localGwService := printf "%s/knative-local-gateway-%s" ($knServing.namespace | default "knative-serving") $gwRefClass }}
+{{- $localGatewaysYaml := printf "- class: %s\n  gateway: %s\n  service: %s\n  supported-features:\n  - HTTPRouteRequestTimeout" $gwRefClass $localGwRef $localGwService }}
+
+{{- $servingNetwork := dict
+  "ingress-class" "gateway-api.ingress.networking.knative.dev"
+}}
+{{- if $autoTlsEnabled }}
+  {{- $servingNetwork = set $servingNetwork "external-domain-tls" "Enabled" }}
+  {{- $servingNetwork = set $servingNetwork "namespace-wildcard-cert-selector" (toJson $autoTlsSelector) }}
+{{- end }}
+
 {{- $servingConfig := dict
   "features" (dict
     "kubernetes.podspec-affinity" "enabled"
@@ -83,32 +123,33 @@
     "retain-since-create-time" "48h"
     "retain-since-last-active-time" "15h"
   )
-  "istio" (dict
-    "local-gateways" "- name: knative-local-gateway\n  namespace: knative-serving\n  service: knative-local-gateway.istio-system.svc.cluster.local"
+  "gateway" (dict
+    "external-gateways" $externalGatewaysYaml
+    "local-gateways" $localGatewaysYaml
   )
-  "network" (dict
-    "ingress-class" "istio.ingress.networking.knative.dev"
-  )
+  "network" $servingNetwork
 }}
 {{- if $certManagerEnabled }}
   {{- $servingConfig = set $servingConfig "certmanager" (dict
     "issuerRef" $issuerRef
   ) }}
-  {{- $_ := set (index $servingConfig "network") "external-domain-tls" "Enabled" }}
 {{- end }}
 {{- if $hostedZone }}
   {{- $servingConfig = set $servingConfig "domain" (dict $hostedZone "") }}
 {{- end }}
 
-{{- $servingDefaults := dict
+{{- $natsKnServingDefaults := dict
   "ingress" (dict
-    "istio" (dict
-      "enabled" true
-    )
+    "istio" (dict "enabled" false)
+    "contour" (dict "enabled" false)
+    "kourier" (dict "enabled" false)
   )
   "config" $servingConfig
+  "additionalManifests" (list
+    (dict "URL" "https://github.com/knative-extensions/net-gateway-api/releases/download/knative-v1.21.0/release.yaml")
+  )
 }}
-{{- $servingSpec := merge ($knServing.spec | default dict) $servingDefaults }}
+{{- $servingSpec := merge ($knServing.spec | default dict) $natsKnServingDefaults }}
 
 # ==============================================================================
 # NATS StorageClass (composed when nats.storageClass.enabled)
@@ -150,14 +191,12 @@
 {{- $natsValues := mergeOverwrite (deepCopy $natsDefaultValues) ($nats.values | default dict) }}
 
 # ==============================================================================
-# Knative Eventing default spec (istio + NATS channel when enabled)
+# Knative Eventing default spec (NATS channel when enabled)
 # ==============================================================================
+# Note: dropped config.features.istio (sidecar-only). Ambient handles workload
+# mTLS at the node level — eventing doesn't need to know about the mesh.
 {{- $eventingDefaults := dict
-  "config" (dict
-    "features" (dict
-      "istio" "enabled"
-    )
-  )
+  "config" dict
 }}
 {{- if $natsEnabled }}
   {{- $natsNs := $nats.namespace | default "nats" }}
@@ -181,6 +220,8 @@
   "labels" $labels
   "hostedZone" $hostedZone
   "certManager" (dict "enabled" $certManagerEnabled "issuerRef" $issuerRef)
+  "gatewayRef" (dict "name" $gwRefName "namespace" $gwRefNamespace "gatewayClassName" $gwRefClass)
+  "autoTls" (dict "enabled" $autoTlsEnabled "namespaceSelector" $autoTlsSelector)
   "helmProviderConfigRef" $helmProviderConfigRef
   "kubernetesProviderConfigRef" $k8sProviderConfigRef
   "knativeOperator" (dict

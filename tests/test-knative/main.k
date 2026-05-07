@@ -357,12 +357,7 @@ _items = [
                     kind = "Object"
                     metadata.name = "test-observed-knative-serving"
                 }
-                # PeerAuthentication renders when serving ns ready
-                {
-                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
-                    kind = "Object"
-                    metadata.name = "test-observed-knative-serving-peer-auth"
-                }
+                # PeerAuthentication: dropped (ambient-mode rebuild — mTLS lives in ztunnel)
                 # Eventing Object renders when operator + namespace ready
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"

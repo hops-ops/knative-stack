@@ -29,7 +29,10 @@ spec:
       kind: Namespace
       metadata:
         name: {{ $servingNs }}
-        labels: {{ merge (dict "istio-injection" "enabled") $state.labels | toJson }}
+        # Knative system namespaces stay OUT of the ambient mesh — control-plane
+        # components (controller, autoscaler, activator, webhook) shouldn't be
+        # subject to mesh interception. Just emit the standard labels.
+        labels: {{ $state.labels | toJson }}
   providerConfigRef:
     name: {{ $k8sPCR.name }}
     kind: {{ $k8sPCR.kind }}
@@ -55,7 +58,10 @@ spec:
       kind: Namespace
       metadata:
         name: {{ $eventingNs }}
-        labels: {{ merge (dict "istio-injection" "enabled") $state.labels | toJson }}
+        # Knative system namespaces stay OUT of the ambient mesh — control-plane
+        # components (controller, autoscaler, activator, webhook) shouldn't be
+        # subject to mesh interception. Just emit the standard labels.
+        labels: {{ $state.labels | toJson }}
   providerConfigRef:
     name: {{ $k8sPCR.name }}
     kind: {{ $k8sPCR.kind }}

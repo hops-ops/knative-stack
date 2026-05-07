@@ -14,7 +14,7 @@ spec:
     served: true
     schema:
       openAPIV3Schema:
-        description: KnativeStack deploys Knative Operator, Knative Serving/Eventing, and optional NATS.
+        description: KnativeStack deploys Knative Operator, Knative Serving (on net-gateway-api), Knative Eventing, and optional NATS. Routes are emitted as Gateway API HTTPRoutes attached to the platform Gateway provisioned by istio-stack. Sidecar net-istio is not supported.
         type: object
         properties:
           spec:
@@ -27,6 +27,31 @@ spec:
               hostedZone:
                 description: DNS hosted zone for Knative Serving domains (e.g. example.com). Configures domain routing.
                 type: string
+              gatewayRef:
+                description: Reference to the platform Gateway resource (gateway.networking.k8s.io/v1) that Knative HTTPRoutes attach to as parentRefs. Provisioned by istio-stack (or any Gateway API conformant controller). When unset, defaults to {name=platform, namespace=istio-ingress, gatewayClassName=istio}.
+                type: object
+                properties:
+                  name:
+                    description: Gateway metadata.name. Defaults to "platform".
+                    type: string
+                  namespace:
+                    description: Namespace where the Gateway lives. Defaults to "istio-ingress".
+                    type: string
+                  gatewayClassName:
+                    description: GatewayClass the Gateway uses. Defaults to "istio". Knative populates this in the gateway-api config so it picks the right Gateway when multiple exist with the same name across classes.
+                    type: string
+              autoTls:
+                description: Per-namespace wildcard auto-TLS configuration. When enabled, Knative emits a Certificate per matching namespace with hostname "*.<namespace>.<hostedZone>"; cert-manager fulfills via the configured ClusterIssuer; net-gateway-api wires the Secret into the Gateway's TLS listener.
+                type: object
+                properties:
+                  enabled:
+                    description: Whether to enable per-namespace wildcard auto-TLS. Requires certManager.enabled. Defaults to false.
+                    type: boolean
+                    default: false
+                  namespaceSelector:
+                    description: 'Label selector matching the namespaces opted into auto-TLS. Defaults to {matchLabels: {knative.dev/auto-tls: "true"}}. Annotate or label user namespaces accordingly.'
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
               certManager:
                 description: Cert-manager integration for automatic TLS.
                 type: object

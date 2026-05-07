@@ -41,34 +41,8 @@ spec:
     kind: {{ $k8sPCR.kind }}
 {{- end }}
 
-# ==============================================================================
-# PeerAuthentication: Istio mTLS permissive for knative-serving namespace
-# ==============================================================================
-{{- if and $knServing.enabled $servingNsReady }}
----
-apiVersion: kubernetes.m.crossplane.io/v1alpha1
-kind: Object
-metadata:
-  name: {{ $state.name }}-knative-serving-peer-auth
-  annotations:
-    {{ setResourceNameAnnotation "knative-serving-peer-auth" }}
-  labels: {{ $state.labels | toJson }}
-spec:
-  managementPolicies: {{ $state.managementPolicies | toJson }}
-  forProvider:
-    manifest:
-      apiVersion: security.istio.io/v1beta1
-      kind: PeerAuthentication
-      metadata:
-        name: default
-        namespace: {{ $knServing.namespace }}
-      spec:
-        mtls:
-          mode: PERMISSIVE
-  providerConfigRef:
-    name: {{ $k8sPCR.name }}
-    kind: {{ $k8sPCR.kind }}
-{{- end }}
+# PeerAuthentication: dropped. Ambient mode handles mTLS at the node via
+# ztunnel — no PeerAuthentication is needed (it would be ignored anyway).
 
 # ==============================================================================
 # Usage: delete serving before operator (CRDs must exist for cleanup)
