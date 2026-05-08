@@ -33,8 +33,11 @@ _items = [
                 autoUpgrade.channel = "Rapid"
             }
             defaultConditions = ["Ready"]
-            # 60 minutes — gateway-api CRDs + Istio Ambient + Knative Operator/Serving/Eventing
-            timeoutSeconds = 3600
+            # 90 minutes — gateway-api CRDs + Istio Ambient + Knative
+            # Operator/Serving on a kind cluster needs more headroom than
+            # the typical e2e budget. KnativeServing reconciliation alone
+            # routinely runs >5 min; chained with Istio install it adds up.
+            timeoutSeconds = 5400
             # 30 minutes
             cleanupTimeoutSeconds = 1800
             skipDelete = False
