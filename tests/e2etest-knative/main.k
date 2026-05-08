@@ -205,7 +205,11 @@ _items = [
                             kind = "ProviderConfig"
                         }
                         knativeServing.enabled = True
-                        knativeEventing.enabled = True
+                        # Eventing disabled in e2e — KnativeEventing CR
+                        # reconciliation is heavy on a kind cluster and exceeds
+                        # the default e2e budget. Render tests cover compose
+                        # paths; live verify happens on real clusters.
+                        knativeEventing.enabled = False
                     }
                 }
             ]
