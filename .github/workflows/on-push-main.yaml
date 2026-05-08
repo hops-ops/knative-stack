@@ -39,10 +39,18 @@ jobs:
   e2e:
     uses: unbounded-tech/workflows-crossplane/.github/workflows/e2e.yaml@v2.20.0
     with:
-      # Knative + Istio Ambient + Gateway API teardown is heavy.
-      # Default 33min isn't enough for the dependency-chain unwind.
+      # Knative + Istio Ambient + Gateway API teardown is heavy. Mirror the
+      # aws-observe pattern: KnativeStack manifests cleanup runs first, then
+      # the heavy infra (IstioStack, GatewayAPIStack) tears down in a separate
+      # phase with its own budget.
       timeout-minutes: 60
-      cleanup-timeout-minutes: 60
+      cleanup-timeout-minutes: 30
+      delete-extra-resources: |
+        [
+          "istiostacks.hops.ops.com.ai",
+          "gatewayapistacks.hops.ops.com.ai"
+        ]
+      delete-extra-resources-timeout-minutes: 30
 
   version-and-tag:
     name: Version and Tag
