@@ -42,6 +42,9 @@ jobs:
 
   e2e:
     uses: unbounded-tech/workflows-crossplane/.github/workflows/e2e.yaml@v2.20.0
+    with:
+      timeout-minutes: 60
+      cleanup-timeout-minutes: 60
 
   publish:
     needs:
