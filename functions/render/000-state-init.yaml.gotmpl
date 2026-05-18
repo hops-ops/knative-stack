@@ -195,8 +195,22 @@
 # ==============================================================================
 # Note: dropped config.features.istio (sidecar-only). Ambient handles workload
 # mTLS at the node level — eventing doesn't need to know about the mesh.
+{{- /* eventing-webhook ships with a 200Mi limit that OOMKills under modest
+   ApiServerSource / Trigger reconcile load. Bump to 512Mi so it stays up. */}}
 {{- $eventingDefaults := dict
   "config" dict
+  "deployments" (list
+    (dict
+      "name" "eventing-webhook"
+      "resources" (list
+        (dict
+          "container" "eventing-webhook"
+          "requests" (dict "memory" "100Mi")
+          "limits" (dict "memory" "512Mi")
+        )
+      )
+    )
+  )
 }}
 {{- if $natsEnabled }}
   {{- $natsNs := $nats.namespace | default "nats" }}
