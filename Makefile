@@ -25,6 +25,7 @@ generate-configuration:
 # Format: example_path::observed_resources_path (observed_resources_path is optional)
 EXAMPLES := \
     examples/knativestacks/minimal.yaml:: \
+    examples/knativestacks/nodepool.yaml:: \
     examples/knativestacks/standard.yaml::
 
 # Render all examples (parallel execution, output shown per-job when complete)

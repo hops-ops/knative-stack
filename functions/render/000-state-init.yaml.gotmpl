@@ -59,6 +59,38 @@
 }}
 
 # ==============================================================================
+# NodePool configuration
+# ==============================================================================
+{{- $nodePoolSpec := $spec.nodePool | default dict }}
+{{- $nodePoolEnabled := false }}
+{{- if hasKey $nodePoolSpec "enabled" }}
+  {{- $nodePoolEnabled = $nodePoolSpec.enabled }}
+{{- end }}
+{{- $nodePoolName := $nodePoolSpec.name | default "hops-knative" }}
+{{- $nodePoolNodeClassName := $nodePoolSpec.nodeClassName | default "hops-default" }}
+{{- $nodePoolLimits := $nodePoolSpec.limits | default (dict "nodes" 10) }}
+{{- $nodePoolRequirements := $nodePoolSpec.requirements | default (list
+  (dict "key" "karpenter.sh/capacity-type" "operator" "In" "values" (list "spot" "on-demand"))
+  (dict "key" "eks.amazonaws.com/instance-category" "operator" "In" "values" (list "c" "m" "r"))
+  (dict "key" "eks.amazonaws.com/instance-generation" "operator" "Gt" "values" (list "4"))
+  (dict "key" "eks.amazonaws.com/instance-memory" "operator" "Gt" "values" (list "7999"))
+  (dict "key" "eks.amazonaws.com/instance-cpu" "operator" "Gt" "values" (list "1"))
+  (dict "key" "kubernetes.io/arch" "operator" "In" "values" (list "amd64"))
+  (dict "key" "kubernetes.io/os" "operator" "In" "values" (list "linux"))
+) }}
+{{- $nodePoolDisruption := $nodePoolSpec.disruption | default (dict "consolidationPolicy" "WhenEmptyOrUnderutilized" "consolidateAfter" "60s") }}
+{{- $nodePoolTaintKey := "knative" }}
+{{- $nodePoolTaintValue := "true" }}
+{{- $nodePoolNodeSelector := dict }}
+{{- $nodePoolTolerations := list }}
+{{- $nodePoolAffinity := dict }}
+{{- if $nodePoolEnabled }}
+  {{- $nodePoolNodeSelector = dict "workload-type" "knative" }}
+  {{- $nodePoolTolerations = list (dict "key" $nodePoolTaintKey "operator" "Equal" "value" $nodePoolTaintValue "effect" "NoSchedule") }}
+  {{- $nodePoolAffinity = dict "nodeAffinity" (dict "requiredDuringSchedulingIgnoredDuringExecution" (dict "nodeSelectorTerms" (list (dict "matchExpressions" (list (dict "key" "workload-type" "operator" "In" "values" (list "knative"))))))) }}
+{{- end }}
+
+# ==============================================================================
 # Per-component defaults
 # ==============================================================================
 {{- $knOp := $spec.knativeOperator | default dict }}
@@ -149,6 +181,35 @@
     (dict "URL" "https://github.com/knative-extensions/net-gateway-api/releases/download/knative-v1.21.0/release.yaml")
   )
 }}
+{{- $servingDeployments := list }}
+{{- range $deploymentDefaults := list
+  (dict "name" "activator" "container" "activator" "cpu" "15m" "memory" "100Mi")
+  (dict "name" "autoscaler" "container" "autoscaler" "cpu" "15m" "memory" "100Mi")
+  (dict "name" "autoscaler-hpa" "container" "autoscaler-hpa" "cpu" "15m" "memory" "100Mi")
+  (dict "name" "controller" "container" "controller" "cpu" "15m" "memory" "100Mi")
+  (dict "name" "webhook" "container" "webhook" "cpu" "15m" "memory" "100Mi")
+  (dict "name" "net-gateway-api-controller" "container" "controller" "cpu" "15m" "memory" "100Mi")
+  (dict "name" "net-gateway-api-webhook" "container" "webhook" "cpu" "15m" "memory" "100Mi")
+  (dict "name" "net-istio-controller" "container" "controller" "cpu" "15m" "memory" "100Mi")
+  (dict "name" "net-istio-webhook" "container" "webhook" "cpu" "15m" "memory" "100Mi")
+}}
+  {{- $deployment := dict
+    "name" $deploymentDefaults.name
+    "resources" (list
+      (dict
+        "container" $deploymentDefaults.container
+        "requests" (dict "cpu" $deploymentDefaults.cpu "memory" $deploymentDefaults.memory)
+        "limits" (dict "memory" "256Mi")
+      )
+    )
+  }}
+  {{- if $nodePoolEnabled }}
+    {{- $_ := set $deployment "nodeSelector" $nodePoolNodeSelector }}
+    {{- $_ := set $deployment "tolerations" $nodePoolTolerations }}
+  {{- end }}
+  {{- $servingDeployments = append $servingDeployments $deployment }}
+{{- end }}
+{{- $_ := set $natsKnServingDefaults "deployments" $servingDeployments }}
 {{- $servingSpec := merge ($knServing.spec | default dict) $natsKnServingDefaults }}
 
 # ==============================================================================
@@ -193,7 +254,7 @@
   "container" (dict
     "merge" (dict
       "resources" (dict
-        "requests" (dict "cpu" "100m" "memory" "256Mi")
+        "requests" (dict "cpu" "11m" "memory" "50Mi")
         "limits" (dict "cpu" "500m" "memory" "512Mi")
       )
     )
@@ -201,12 +262,32 @@
   "reloader" (dict
     "merge" (dict
       "resources" (dict
-        "requests" (dict "cpu" "10m" "memory" "32Mi")
+        "requests" (dict "cpu" "11m" "memory" "50Mi")
         "limits" (dict "cpu" "50m" "memory" "64Mi")
       )
     )
   )
+  "natsBox" (dict
+    "container" (dict
+      "merge" (dict
+        "resources" (dict
+          "requests" (dict "cpu" "15m" "memory" "100Mi")
+          "limits" (dict "cpu" "100m" "memory" "256Mi")
+        )
+      )
+    )
+  )
 }}
+{{- if $nodePoolEnabled }}
+  {{- $_ := set $natsDefaultValues "podTemplate" (dict
+    "merge" (dict
+      "spec" (dict
+        "nodeSelector" $nodePoolNodeSelector
+        "tolerations" $nodePoolTolerations
+      )
+    )
+  ) }}
+{{- end }}
 {{- $natsValues := mergeOverwrite (deepCopy $natsDefaultValues) ($nats.values | default dict) }}
 
 # ==============================================================================
@@ -216,20 +297,37 @@
 # mTLS at the node level — eventing doesn't need to know about the mesh.
 {{- /* eventing-webhook ships with a 200Mi limit that OOMKills under modest
    ApiServerSource / Trigger reconcile load. Bump to 512Mi so it stays up. */}}
-{{- $eventingDefaults := dict
-  "config" dict
-  "deployments" (list
-    (dict
-      "name" "eventing-webhook"
-      "resources" (list
-        (dict
-          "container" "eventing-webhook"
-          "requests" (dict "memory" "100Mi")
-          "limits" (dict "memory" "512Mi")
-        )
+{{- $eventingDeployments := list }}
+{{- range $deployment := list
+  (dict "name" "eventing-controller" "container" "eventing-controller" "cpu" "15m" "memory" "284Mi" "limitMemory" "512Mi")
+  (dict "name" "eventing-webhook" "container" "eventing-webhook" "cpu" "15m" "memory" "309Mi" "limitMemory" "512Mi")
+  (dict "name" "imc-controller" "container" "controller" "cpu" "23m" "memory" "100Mi" "limitMemory" "256Mi")
+  (dict "name" "imc-dispatcher" "container" "dispatcher" "cpu" "15m" "memory" "100Mi" "limitMemory" "256Mi")
+  (dict "name" "job-sink" "container" "job-sink" "cpu" "15m" "memory" "100Mi" "limitMemory" "256Mi")
+  (dict "name" "mt-broker-controller" "container" "mt-broker-controller" "cpu" "15m" "memory" "100Mi" "limitMemory" "256Mi")
+  (dict "name" "mt-broker-filter" "container" "filter" "cpu" "15m" "memory" "100Mi" "limitMemory" "256Mi")
+  (dict "name" "mt-broker-ingress" "container" "ingress" "cpu" "15m" "memory" "100Mi" "limitMemory" "256Mi")
+  (dict "name" "request-reply" "container" "request-reply" "cpu" "15m" "memory" "100Mi" "limitMemory" "256Mi")
+}}
+  {{- $eventingDeployment := dict
+    "name" $deployment.name
+    "resources" (list
+      (dict
+        "container" $deployment.container
+        "requests" (dict "cpu" $deployment.cpu "memory" $deployment.memory)
+        "limits" (dict "memory" $deployment.limitMemory)
       )
     )
-  )
+  }}
+  {{- if $nodePoolEnabled }}
+    {{- $_ := set $eventingDeployment "nodeSelector" $nodePoolNodeSelector }}
+    {{- $_ := set $eventingDeployment "tolerations" $nodePoolTolerations }}
+  {{- end }}
+  {{- $eventingDeployments = append $eventingDeployments $eventingDeployment }}
+{{- end }}
+{{- $eventingDefaults := dict
+  "config" dict
+  "deployments" $eventingDeployments
 }}
 {{- if $natsEnabled }}
   {{- $natsNs := $nats.namespace | default "nats" }}
@@ -257,6 +355,19 @@
   "autoTls" (dict "enabled" $autoTlsEnabled "namespaceSelector" $autoTlsSelector)
   "helmProviderConfigRef" $helmProviderConfigRef
   "kubernetesProviderConfigRef" $k8sProviderConfigRef
+  "nodePool" (dict
+    "enabled" $nodePoolEnabled
+    "name" $nodePoolName
+    "nodeClassName" $nodePoolNodeClassName
+    "limits" $nodePoolLimits
+    "requirements" $nodePoolRequirements
+    "disruption" $nodePoolDisruption
+    "taintKey" $nodePoolTaintKey
+    "taintValue" $nodePoolTaintValue
+    "nodeSelector" $nodePoolNodeSelector
+    "tolerations" $nodePoolTolerations
+    "affinity" $nodePoolAffinity
+  )
   "knativeOperator" (dict
     "name" ($knOp.name | default "knative-operator")
     "namespace" ($knOp.namespace | default "knative-operator")

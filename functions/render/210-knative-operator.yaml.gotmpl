@@ -4,6 +4,42 @@
 #
 
 {{- $knOp := $state.knativeOperator }}
+{{- $operatorComponent := dict
+  "resources" (dict
+    "requests" (dict "cpu" "15m" "memory" "100Mi")
+    "limits" (dict "cpu" "1000m" "memory" "512Mi")
+  )
+}}
+{{- $webhookComponent := dict
+  "resources" (dict
+    "requests" (dict "cpu" "15m" "memory" "284Mi")
+    "limits" (dict "cpu" "500m" "memory" "512Mi")
+  )
+}}
+{{- if $state.nodePool.enabled }}
+  {{- $_ := set $operatorComponent "affinity" $state.nodePool.affinity }}
+  {{- $_ := set $operatorComponent "tolerations" $state.nodePool.tolerations }}
+  {{- $webhookAffinity := deepCopy $state.nodePool.affinity }}
+  {{- $_ := set $webhookAffinity "podAntiAffinity" (dict
+    "preferredDuringSchedulingIgnoredDuringExecution" (list
+      (dict
+        "weight" 100
+        "podAffinityTerm" (dict
+          "labelSelector" (dict "matchLabels" (dict "app" "operator-webhook"))
+          "topologyKey" "kubernetes.io/hostname"
+        )
+      )
+    )
+  ) }}
+  {{- $_ := set $webhookComponent "affinity" $webhookAffinity }}
+  {{- $_ := set $webhookComponent "tolerations" $state.nodePool.tolerations }}
+{{- end }}
+{{- $operatorDefaults := dict
+  "knative_operator" (dict
+    "knative_operator" $operatorComponent
+    "operator_webhook" $webhookComponent
+  )
+}}
 
 ---
 apiVersion: helm.m.crossplane.io/v1beta1
@@ -26,9 +62,10 @@ spec:
     {{- if $knOp.overrideAllValues }}
     values:
       {{- toYaml $knOp.overrideAllValues | nindent 6 }}
-    {{- else if $knOp.values }}
+    {{- else }}
+    {{- $mergedValues := mergeOverwrite $operatorDefaults ($knOp.values | default dict) }}
     values:
-      {{- toYaml $knOp.values | nindent 6 }}
+      {{- toYaml $mergedValues | nindent 6 }}
     {{- end }}
   rollbackLimit: 3
   providerConfigRef:
