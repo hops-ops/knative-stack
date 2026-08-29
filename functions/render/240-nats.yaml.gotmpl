@@ -28,6 +28,7 @@ spec:
     chart:
       name: nats
       repository: https://nats-io.github.io/k8s/helm/charts/
+      # renovate: datasource=helm depName=nats registryUrl=https://nats-io.github.io/k8s/helm/charts/
       version: 2.12.4
     namespace: {{ $nats.namespace }}
     values:
