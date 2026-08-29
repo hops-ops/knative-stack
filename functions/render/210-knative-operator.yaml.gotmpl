@@ -40,6 +40,8 @@
     "operator_webhook" $webhookComponent
   )
 }}
+# renovate: datasource=helm depName=knative-operator registryUrl=https://knative.github.io/operator
+{{- $operatorChartVersion := "1.21.0" }}
 
 ---
 apiVersion: helm.m.crossplane.io/v1beta1
@@ -55,8 +57,8 @@ spec:
     chart:
       name: knative-operator
       repository: https://knative.github.io/operator
-      url: https://github.com/knative/operator/releases/download/knative-v1.21.0/knative-operator-v1.21.0.tgz
-      version: 1.21.0
+      url: {{ printf "https://github.com/knative/operator/releases/download/knative-v%s/knative-operator-v%s.tgz" $operatorChartVersion $operatorChartVersion }}
+      version: {{ $operatorChartVersion }}
     namespace: {{ $knOp.namespace }}
     wait: true
     {{- if $knOp.overrideAllValues }}

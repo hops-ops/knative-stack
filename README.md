@@ -20,10 +20,10 @@ Deletion protection (Usages) ensures correct teardown order: Serving/Eventing CR
 - Crossplane installed in the cluster
 - **Istio** installed (provides `security.istio.io` CRDs and ingress)
 - Crossplane providers:
-  - `provider-helm` (>=v1)
-  - `provider-kubernetes` (>=v1)
+  - `provider-helm` (^v1)
+  - `provider-kubernetes` (^v1)
 - Crossplane function:
-  - `function-auto-ready` (>=v0.6.0)
+  - `function-auto-ready` (^v0)
 
 ## Quick Start
 
