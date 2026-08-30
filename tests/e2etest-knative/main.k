@@ -54,7 +54,7 @@ _items = [
                         name = "gateway-api-stack"
                     }
                     spec = {
-                        package = "ghcr.io/hops-ops/gateway-api-stack:v0.1.0"
+                        package = "ghcr.io/hops-ops/gateway-api-stack:v0.4.1"
                     }
                 }
                 # istio-stack — provides IstioStack XRD (ambient mode + Gateway API).
