@@ -41,7 +41,10 @@
   )
 }}
 # renovate: datasource=helm depName=knative-operator registryUrl=https://knative.github.io/operator
-{{- $operatorChartVersion := "1.21.0" }}
+# NOTE: pin must be semver WITHOUT a leading "v". The chart url below prefixes "v" itself
+# (knative-v%s / knative-operator-v%s.tgz). Renovate sometimes proposes "v1.x.y" which
+# produces knative-vv1.x.y and breaks helm fetch / e2e.
+{{- $operatorChartVersion := "1.23.1" }}
 
 ---
 apiVersion: helm.m.crossplane.io/v1beta1
