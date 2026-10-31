@@ -65,6 +65,13 @@
       ],
       "semanticCommitType": "feat",
       "semanticCommitScope": "deps"
+    },
+    {
+      "description": "knative-operator Helm index publishes v-prefixed chart versions; strip the v so the bare version used to build the release-asset URL stays valid",
+      "matchPackageNames": [
+        "knative-operator"
+      ],
+      "extractVersion": "^v(?<version>.+)$"
     }
   ],
   "customManagers": [
